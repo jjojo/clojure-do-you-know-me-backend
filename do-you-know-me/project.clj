@@ -6,7 +6,8 @@
   :dependencies [[org.clojure/clojure "1.8.0"]
                  [proto-repl "0.3.1"]
                  [http-kit "2.3.0"]
-                 [org.clojure/data.json "0.2.6"]]
+                 [org.clojure/data.json "0.2.6"]
+                 [nano-id "0.10.0"]]
   :main ^:skip-aot do-you-know-me.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})
