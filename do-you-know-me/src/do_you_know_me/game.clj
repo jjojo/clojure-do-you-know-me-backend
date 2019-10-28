@@ -6,6 +6,7 @@
 (def game-states (atom {}))
 
 (def emojis ["🐹" "🐶" "🐱" "🦊" "🐻" "🐯" "🦁" "🐸" "🐵" "🐥"])
+(def colors ["#f368e0" "#ff9f43" "#ee5253" "#ee5253" "#10ac84" "#5f27cd" "#795548" "#8BC34A"])
 
 
 (defn create-game
@@ -53,25 +54,28 @@
   (:players state))
 
 
-(defn get-emojis-in-game
+(defn get-coll-players-key
   {:test (fn []
            (is (= (count (-> (create-game "1234")
                              (add-player "p1")
                              (add-player "p2")
-                             (get-emojis-in-game)))
+                             (get-coll-players-key :emoji)))
                   2)))}
-  [state]
-  (map :emoji (get-players state)))
+  [state key]
+  (map key (get-players state)))
 
 
-(defn pick-unique-emoji
+(defn pick-unique-key
   {:test (fn []
            (let [state (create-game "1234")]
-             (is (= (:emoji (pick-unique-emoji (add-player state "p1")))
+             (is (= (:color (pick-unique-key (add-player state "p1") colors :color))
+                    (:color (get-player state "p1"))))
+             (is (= (:emoji (pick-unique-key (add-player state "p1") emojis :emoji))
                     (:emoji (get-player state "p1"))))))}
-  [state]
-  (rand-nth (filter (fn [emoji]
-                      (not (in? emoji (get-emojis-in-game state)))) emojis)))
+  [state coll key]
+  (rand-nth (filter (fn [item]
+                      (not (some #(= item %) (get-coll-players-key state key))))
+                    coll)))
 
 
 (defn add-player
@@ -82,7 +86,7 @@
   (-> state
       (update :players conj {:username  "unknown"
                              :id        id
-                             :emoji     (pick-unique-emoji state)
-                             :color     nil
+                             :emoji     (pick-unique-key state emojis :emoji)
+                             :color     (pick-unique-key state colors :color)
                              :questions []
                              :ready     false})))

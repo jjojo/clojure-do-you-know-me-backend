@@ -4,48 +4,78 @@
             [clojure.data.json :as json]
             [nano-id.core :refer [nano-id]]
             [do-you-know-me.game :refer [create-game
-                                         get-game-state
-                                         add-player]]))
+                                         add-player
+                                         get-players]]))
 
 (def clients (atom {}))
 (def game-states (atom {}))
 
-(defn send-and-update-game-state-atom!
-  [state channel action id]
-  (println action id)
-  (swap! game-states assoc (keyword id) state)
+(defn get-game-state
+  {:test (fn []
+           (create-game "1234")
+           (is (= (get-game-state "1234") (create-game "1234"))))}
+  [id]
+  ((keyword id) @game-states))
+
+(defn update-game-state!
+  [state id]
+  (swap! game-states assoc (keyword id) state))
+
+
+(defn send-answer!
+  [channel action id]
   (send! channel (json/write-str {:type    action
-                                  :payload ((keyword id) @game-states)})))
+                                  :payload (get-game-state id)})))
+
+(defn get-players-in-game
+  [id]
+  (get-players (get-game-state id)))
+
+
+(defn get-player-channel
+  [player-id]
+  ((keyword player-id) @clients))
+
+
+(defn send-to-game!
+  [action id]
+  (send! ((keyword id) @clients)
+         (json/write-str {:type    action
+                          :payload (get-game-state id)})))
+
+
+(defn broadcast-answer!
+  [action id]
+  (send-to-game! action id)
+  (doall (map (fn [player]
+                (send!
+                  (get-player-channel (:id player))
+                  (json/write-str {:type    action
+                                   :payload (get-game-state id)})))
+              (get-players-in-game id))))
 
 
 (defn handler [request]
   (with-channel request channel
-                (swap! clients assoc channel true)
-                (println channel "a user connected")
-                (on-close channel (fn [status] (println "channel closed: " status)))
+                (println "a user connected")
+                (on-close channel (fn [status] (println "channel closed: " status))) ; remove channel from clients on close
                 (on-receive channel (fn [data]
                                       (println (json/read-str data :key-fn keyword))
                                       (as-> (json/read-str data :key-fn keyword) data
                                             (case (:action data)
                                               "CREATE_GAME" (let [id (nano-id 4)]
-                                                              (send-and-update-game-state-atom!
-                                                              (create-game id)
-                                                              channel
-                                                              "GAME_STATE"
-                                                              id))
-                                              ;(send! channel (json/write-str {:type    "GAME_STATE"
-                                              ;                                              :payload (create-game (nano-id 4))}))
-                                              "GET_GAME_STATE" (send-and-update-game-state-atom!
-                                                                 ((keyword (:id data)) @game-states)
-                                                                 channel
-                                                                 (:id data)
-                                                                 "GAME_STATE")
-                                              ;(send! channel (json/write-str {:type    "GAME_STATE"
-                                              ;                                                 :payload (get-game-state (get data :id))}))
-                                              "JOIN_GAME" (fn []
-                                                            (add-player (get-game-state (get data :id)) (nano-id 10))
-                                                            (send! channel (json/write-str {:type    "GAME_STATE"
-                                                                                            :payload (get-game-state (get data :id))})))
+                                                              (swap! clients assoc (keyword id) (conj channel))
+                                                              (update-game-state! (create-game id) id)
+                                                              (send-answer! channel "GAME_STATE" id))
+
+                                              "GET_GAME_STATE" (send-answer! channel "GAME_STATE" (:id data))
+
+                                              "JOIN_GAME" (let [player-id (nano-id 10)]
+                                                            (swap! clients assoc (keyword player-id) (conj channel))
+                                                            (update-game-state! (add-player (get-game-state (:id data)) player-id) (:id data))
+                                                            (broadcast-answer! "GAME_STATE" (:id data))
+                                                            (send! channel (json/write-str {:type "PLAYER_ID" :payload player-id})))
+
                                               "error")
                                             )
                                       ))))
