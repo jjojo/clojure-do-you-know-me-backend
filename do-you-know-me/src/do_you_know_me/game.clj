@@ -20,7 +20,7 @@
                                          :title       "Do you know me? 🤔"
                                          :gameStarted false
                                          :questions   questions
-                                         :players     []})
+                                         :players     {}})
   ((keyword id) @game-states))
 
 
@@ -40,18 +40,20 @@
                                    "p1"))
                   "p1")))}
   [state id]
-  (first (filter (fn [player]
-                   (= (:id player) id)) (:players state))))
+  (get-in state [:players (keyword id)]))
 
 
 (defn get-players
   {:test (fn []
-           (is (= (get-players (create-game "1234")) []))
+           (is (= (get-players (create-game "1234")) ()))
            (is (= (count (get-players (-> (create-game "1234")
                                           (add-player "p1")
-                                          (add-player "p2")))) 2)))}
+                                          (add-player "p2"))))
+                  2)))}
   [state]
-  (:players state))
+  (map (fn [key]
+         (get-player state key))
+       (keys (:players state))))
 
 
 (defn get-coll-players-key
@@ -77,16 +79,32 @@
                       (not (some #(= item %) (get-coll-players-key state key))))
                     coll)))
 
+;(defn update-player
+;  [state, id]
+;  (update-in state [:players (get-player state id)]))
 
 (defn add-player
   {:test (fn []
-           (is (= (count (:players (add-player (create-game "1234") "p1"))) 1))
-           (is (= (:id (get-player (add-player (create-game "1234") "p1") "p1")) "p1")))}
+           (is (= (get-in (add-player (create-game "1234") "p1") [:players :p1 :id]) "p1"))
+           (is (= (keys (:players (-> (create-game "1234")
+                                      (add-player "p1")
+                                      (add-player "p2"))))
+                  '(:p1 :p2))))}
   [state id]
-  (-> state
-      (update :players conj {:username  "unknown"
-                             :id        id
-                             :emoji     (pick-unique-key state emojis :emoji)
-                             :color     (pick-unique-key state colors :color)
-                             :questions []
-                             :ready     false})))
+  (assoc-in state [:players (keyword id)] {:username  "unknown"
+                                           :id        id
+                                           :emoji     (pick-unique-key state emojis :emoji)
+                                           :color     (pick-unique-key state colors :color)
+                                           :questions []
+                                           :ready     false}))
+
+(defn set-username
+  {:test (fn []
+           (is (= (get-in (set-username
+                               (-> (create-game "1234")
+                                   (add-player "p1"))
+                               "p1"
+                               "Kalle") [:players :p1 :username])
+                  "Kalle")))}
+  [state, id, username]
+  (assoc-in state [:players (keyword id) :username] username))

@@ -5,7 +5,8 @@
             [nano-id.core :refer [nano-id]]
             [do-you-know-me.game :refer [create-game
                                          add-player
-                                         get-players]]))
+                                         get-players
+                                         set-username]]))
 
 (def clients (atom {}))
 (def game-states (atom {}))
@@ -76,6 +77,15 @@
                                                             (broadcast-answer! "GAME_STATE" (:id data))
                                                             (send! channel (json/write-str {:type "PLAYER_ID" :payload player-id})))
 
+                                              "SET_USERNAME" (do
+                                                               (println "IN SET USERNAME !")
+                                                               (println (set-username (get-game-state (:id data))
+                                                                                      (:playerId data)
+                                                                                      (:username data)))
+                                                               (update-game-state! (set-username (get-game-state (:id data))
+                                                                                               (:playerId data)
+                                                                                               (:username data)) (:id data))
+                                                               (broadcast-answer! "GAME_STATE" (:id data)))
                                               "error")
                                             )
                                       ))))
