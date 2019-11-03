@@ -11,7 +11,11 @@
                                          get-game-questions
                                          set-player-ready
                                          start-game
-                                         set-focus]]))
+                                         set-focus
+                                         set-active-question
+                                         answer
+                                         correct-answer
+                                         maybe-change-turn]]))
 
 (def clients (atom {}))
 (def game-states (atom {}))
@@ -116,6 +120,23 @@
                                                                                              (:playerId data)
                                                                                              (:questionId data)) (:id data))
                                                               (broadcast-answer! "GAME_STATE" (:id data)))
-                                            "error")
-                                      )
-                            ))) )
+
+                                              "SET_ACTIVE_QUESTION" (do (update-game-state! (set-active-question
+                                                                                              (get-game-state (:id data))
+                                                                                              (:question data)) (:id data))
+                                                                        (broadcast-answer! "GAME_STATE" (:id data)))
+
+                                              "ANSWER" (do (update-game-state! (answer
+                                                                                 (get-game-state (:id data))
+                                                                                 (:playerId data)
+                                                                                 (:answer data)) (:id data))
+                                                           (broadcast-answer! "GAME_STATE" (:id data)))
+
+                                              "CORRECT_ANSWER" (do (update-game-state! (-> (correct-answer (get-game-state (:id data))
+                                                                                                           (:playerId data)
+                                                                                                           (:correct data))
+                                                                                           (maybe-change-turn)) (:id data))
+                                                                   (broadcast-answer! "GAME_STATE" (:id data)))
+                                              "error")
+                                            )
+                                      ))))
