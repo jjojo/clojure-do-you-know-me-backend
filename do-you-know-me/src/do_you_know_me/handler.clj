@@ -6,7 +6,12 @@
             [do-you-know-me.game :refer [create-game
                                          add-player
                                          get-players
-                                         set-username]]))
+                                         set-username
+                                         add-question-to-player
+                                         get-game-questions
+                                         set-player-ready
+                                         start-game
+                                         set-focus]]))
 
 (def clients (atom {}))
 (def game-states (atom {}))
@@ -55,6 +60,13 @@
                                    :payload (get-game-state id)})))
               (get-players-in-game id))))
 
+(defn start-game?
+  [id]
+  (if (every? :ready (-> (get-game-state id)
+                         (get-players)))
+    (update-game-state! (start-game (get-game-state id)) id)
+    nil))
+
 
 (defn handler [request]
   (with-channel request channel
@@ -71,6 +83,8 @@
 
                                               "GET_GAME_STATE" (send-answer! channel "GAME_STATE" (:id data))
 
+                                              "GET_QUESTIONS" (send! channel (json/write-str {:type "QUESTIONS" :payload (get-game-questions)}))
+
                                               "JOIN_GAME" (let [player-id (nano-id 10)]
                                                             (swap! clients assoc (keyword player-id) (conj channel))
                                                             (update-game-state! (add-player (get-game-state (:id data)) player-id) (:id data))
@@ -78,14 +92,30 @@
                                                             (send! channel (json/write-str {:type "PLAYER_ID" :payload player-id})))
 
                                               "SET_USERNAME" (do
-                                                               (println "IN SET USERNAME !")
-                                                               (println (set-username (get-game-state (:id data))
-                                                                                      (:playerId data)
-                                                                                      (:username data)))
+                                                               (println "SET USERNAME RUNS")
                                                                (update-game-state! (set-username (get-game-state (:id data))
-                                                                                               (:playerId data)
-                                                                                               (:username data)) (:id data))
+                                                                                                 (:playerId data)
+                                                                                                 (:username data)) (:id data))
                                                                (broadcast-answer! "GAME_STATE" (:id data)))
-                                              "error")
-                                            )
-                                      ))))
+                                              "ADD_QUESTION" (do
+                                                               (println "IN ADD QUESTION !")
+                                                               (update-game-state! (add-question-to-player (get-game-state (:id data))
+                                                                                                           (:playerId data)
+                                                                                                           (:question data)) (:id data))
+                                                               (broadcast-answer! "GAME_STATE" (:id data)))
+
+                                              "SET_PLAYER_READY" (do
+                                                                   (println "IN SET READY!")
+                                                                   (update-game-state! (set-player-ready (get-game-state (:id data))
+                                                                                                         (:playerId data)
+                                                                                                         (:ready data)) (:id data))
+                                                                   (start-game? (:id data))
+                                                                   (broadcast-answer! "GAME_STATE" (:id data)))
+
+                                              "SET_FOCUS" (do (update-game-state! (set-focus (get-game-state (:id data))
+                                                                                             (:playerId data)
+                                                                                             (:questionId data)) (:id data))
+                                                              (broadcast-answer! "GAME_STATE" (:id data)))
+                                            "error")
+                                      )
+                            ))) )
