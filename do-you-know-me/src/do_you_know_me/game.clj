@@ -269,21 +269,16 @@
 
 (defn maybe-change-turn
   {:test (fn []
-           (is (let [state (-> (create-game "1234")
-                               (add-player "p1")
-                               (add-player "p2")
-                               (add-question-to-player "p1" (:1 questions))
-                               (start-game)
-                               (answer "p2" "test answer"))]
-                 (if (= (:turn state) "p1")
-                   (not= (maybe-change-turn state) state)
-                   (= (maybe-change-turn state) state)))))}
+           (is (let [state (as-> (create-game "1234") $
+                                 (add-player $ "p1")
+                                 (add-player $ "p2")
+                                 (add-question-to-player $ "p1" (:1 questions))
+                                 (set-active-question $ (first (get-in $ [:players :p1 :questions])))
+                                 (start-game $)
+                                 (answer $ "p2" "test answer"))]
+                 (not= (maybe-change-turn state) state))))}
   [state]
-  (println "MabyChange turn runs" state)
   (if (= (keys (get-in state [:activeQuestion :answers]))
-         (remove nil? (map (fn [player]
-                             (if (not= (:id player) (:turn state))
-                               (keyword (get player :id))
-                               nil)) (get-players state))))
-   (change-turn state)
-   state))
+         (remove nil? (filter #(not= % (keyword (get-in state [:activeQuestion :playerId]))) (keys (:players state)))))
+    (change-turn state)
+    state))
