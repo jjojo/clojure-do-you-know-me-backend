@@ -108,7 +108,7 @@
              :id        id
              :emoji     (pick-unique-key state emojis :emoji)
              :color     (pick-unique-key state colors :color)
-             :questions []
+             :questions {}
              :points    0
              :ready     false}))
 
@@ -127,22 +127,24 @@
 
 (defn add-question-to-player
   {:test (fn []
-           (is (= (first (get-in (add-question-to-player
-                                   (-> (create-game "1234")
-                                       (add-player "p1"))
-                                   "p1"
-                                   {:id 1 :question "vad heter du?"}) [:players :p1 :questions]))
-                  {:id       1
-                   :question "vad heter du?"
-                   :focus    false
+           (is (= (:1 (get-in (add-question-to-player
+                                (-> (create-game "1234")
+                                    (add-player "p1"))
+                                "p1"
+                                1) [:players :p1 :questions]))
+                  {:id       1,
+                   :question "What is/was your mothers name?",
+                   :tags     ["family" "parent"],
+                   :points   100,
+                   :level    "easy",
+                   :focus    false,
                    :playerId "p1"})))}
-  [state, id, question]
+  [state, id, questionId]
   (assoc-in state
-            [:players (keyword id) :questions]
-            (conj (get-in state
-                          [:players (keyword id) :questions])
-                  (-> (assoc question :focus false)
-                      (assoc :playerId id)))))
+            [:players (keyword id) :questions (keyword (str questionId))]
+            (-> ((keyword (str questionId)) questions)
+                (assoc :focus false)
+                (assoc :playerId id))))
 
 
 (defn set-player-ready
@@ -172,32 +174,31 @@
 
 (defn set-focus
   {:test (fn []
-           (is (= (:id (first (get-in (set-focus (-> (create-game "1234")
-                                                     (add-player "p1")
-                                                     (add-question-to-player "p1" {:id 1 :question "test question?"}))
-                                                 "p1"
-                                                 1) [:players :p1 :questions])))
-                  1))
-           (is (= (:id (second (get-in (set-focus (-> (create-game "1234")
-                                                      (add-player "p1")
-                                                      (add-question-to-player "p1" {:id 1 :question "test question?"})
-                                                      (add-question-to-player "p1" {:id 2 :question "test question?"}))
-                                                  "p1"
-                                                  2) [:players :p1 :questions])))
-                  2)))}
+           (is (= (:focus (get-in (set-focus (-> (create-game "1234")
+                                                 (add-player "p1")
+                                                 (add-question-to-player "p1" 1))
+                                             "p1"
+                                             1) [:players :p1 :questions :1]))
+                  true))
+           (is (= (get-in (set-focus (-> (create-game "1234")
+                                         (add-player "p1")
+                                         (add-question-to-player "p1" 1)
+                                         (add-question-to-player "p1" 2)
+                                         (set-focus "p1" 1))
+                                     "p1"
+                                     2) [:players :p1 :questions :2 :focus])
+                  true)))}
   [state playerId questionId]
-  (assoc-in state
-            [:players (keyword playerId) :questions]
-            (map (fn [question]
-                   (if (= (:id question) questionId)
-                     (assoc question :focus true)
-                     (assoc question :focus false)))
-                 (get-in state [:players (keyword playerId) :questions]))))
+  (update-in state [:players (keyword playerId) :questions]
+             (fn [questions]
+               (-> (into {} (for [[k v] questions]
+                              [k (assoc v :focus false)]))
+                   (assoc-in [(keyword (str questionId)) :focus] true)))))
 
 (defn set-active-question
   {:test (fn []
-           (is (= (:activeQuestion (set-active-question (create-game "123") {:question "test question?"}))
-                  {:question "test question?" :answers {}})))}
+           (is (= (:activeQuestion (set-active-question (create-game "123") (:1 questions)))
+                  (assoc (:1 questions) :answers {}))))}
   [state, question]
   (assoc state :activeQuestion (assoc question :answers {})))
 
@@ -215,9 +216,11 @@
 
 (defn correct-answer
   {:test (fn []
-           (is (= (-> (correct-answer (create-game "1234") "p1" true)
+           (is (= (-> (correct-answer (-> (create-game "1234")
+                                          (set-active-question (:1 questions))
+                                          (answer "p1" "test answer")) "p1" false)
                       (get-in [:activeQuestion :answers :p1 :correct]))
-                  true)))}
+                  false)))}
   [state playerId correct]
   (assoc-in state [:activeQuestion :answers (keyword playerId) :correct] correct))
 
@@ -238,8 +241,24 @@
   (first (map (fn [key]
                 (if (get-in state [:activeQuestion :answers key :correct])
                   (update-in state [:players key :points] + (get-in state [:activeQuestion :points]))
-                  nil))
+                  state))
               (keys (get-in state [:activeQuestion :answers])))))
+
+(defn set-player-question-answered
+  {:test (fn []
+           (is (= (as-> (create-game "123") $
+                        (add-question-to-player $ "p1" 1)
+                        (set-active-question $ (get-in $ [:players :p1 :questions :1]))
+                        (set-player-question-answered $)))))}
+  [state]
+  (assoc-in state
+            [:players
+             (keyword (get-in state [:activeQuestion :playerId]))
+             :questions
+             (keyword (str (get-in state [:activeQuestion :id])))
+             :answered]
+            true))
+
 
 (defn change-turn
   {:test (fn []
@@ -259,8 +278,8 @@
                       (:activeQuestion))
                   nil)))}
   [state]
-  (println "CHANGE TURN RUNS")
   (as-> (give-score state) $
+        (set-player-question-answered $)
         (assoc $ :turn (nth (:playOrder state)
                             (mod (+ (.indexOf (:playOrder state) (keyword (:turn state))) 1)
                                  (count (:playOrder state)))))
@@ -272,8 +291,8 @@
            (is (let [state (as-> (create-game "1234") $
                                  (add-player $ "p1")
                                  (add-player $ "p2")
-                                 (add-question-to-player $ "p1" (:1 questions))
-                                 (set-active-question $ (first (get-in $ [:players :p1 :questions])))
+                                 (add-question-to-player $ "p1" "1")
+                                 (set-active-question $ (get-in $ [:players :p1 :questions :1]))
                                  (start-game $)
                                  (answer $ "p2" "test answer"))]
                  (not= (maybe-change-turn state) state))))}

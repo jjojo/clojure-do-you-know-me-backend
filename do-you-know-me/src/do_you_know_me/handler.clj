@@ -75,7 +75,14 @@
 (defn handler [request]
   (with-channel request channel
                 (println "a user connected")
-                (on-close channel (fn [status] (println "channel closed: " status))) ; remove channel from clients on close
+                (on-close channel (fn [status]
+                                    (println "channel closed: " status)
+                                    (map (fn [key]
+                                           (if (= (key @clients) channel)
+                                             (swap! clients dissoc key)
+                                             nil)
+                                           (keys @clients)))))
+
                 (on-receive channel (fn [data]
                                       (println (json/read-str data :key-fn keyword))
                                       (as-> (json/read-str data :key-fn keyword) data
@@ -85,15 +92,19 @@
                                                               (update-game-state! (create-game id) id)
                                                               (send-answer! channel "GAME_STATE" id))
 
-                                              "GET_GAME_STATE" (send-answer! channel "GAME_STATE" (:id data))
+                                              "GET_GAME_STATE" (do (cond
+                                                                     (contains? data :playerId) (swap! clients assoc (keyword (:playerId data)) (conj channel))
+                                                                     (contains? data :id) (swap! clients assoc (keyword (:id data)) (conj channel))
+                                                                     :else nil)
+                                                                   (broadcast-answer! "GAME_STATE" (:id data)))
 
                                               "GET_QUESTIONS" (send! channel (json/write-str {:type "QUESTIONS" :payload (get-game-questions)}))
 
                                               "JOIN_GAME" (let [player-id (nano-id 10)]
                                                             (swap! clients assoc (keyword player-id) (conj channel))
                                                             (update-game-state! (add-player (get-game-state (:id data)) player-id) (:id data))
-                                                            (broadcast-answer! "GAME_STATE" (:id data))
-                                                            (send! channel (json/write-str {:type "PLAYER_ID" :payload player-id})))
+                                                            (send! channel (json/write-str {:type "PLAYER_ID" :payload player-id}))
+                                                            (broadcast-answer! "GAME_STATE" (:id data)))
 
                                               "SET_USERNAME" (do
                                                                (println "SET USERNAME RUNS")
@@ -105,7 +116,7 @@
                                                                (println "IN ADD QUESTION !")
                                                                (update-game-state! (add-question-to-player (get-game-state (:id data))
                                                                                                            (:playerId data)
-                                                                                                           (:question data)) (:id data))
+                                                                                                           (:questionId data)) (:id data))
                                                                (broadcast-answer! "GAME_STATE" (:id data)))
 
                                               "SET_PLAYER_READY" (do
@@ -132,10 +143,12 @@
                                                                                  (:answer data)) (:id data))
                                                            (broadcast-answer! "GAME_STATE" (:id data)))
 
-                                              "CORRECT_ANSWER" (do (update-game-state! (-> (correct-answer (get-game-state (:id data))
+                                              "CORRECT_ANSWER" (do (println "CORRECT ANSWER RUNS")
+                                                                 (update-game-state! (-> (correct-answer (get-game-state (:id data))
                                                                                                            (:playerId data)
                                                                                                            (:correct data))
                                                                                            (maybe-change-turn)) (:id data))
+                                                                   (println "WANTS TO SEND " (get-game-state (:id data)))
                                                                    (broadcast-answer! "GAME_STATE" (:id data)))
                                               "error")
                                             )
