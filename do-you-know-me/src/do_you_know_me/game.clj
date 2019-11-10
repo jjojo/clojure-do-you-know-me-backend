@@ -178,22 +178,24 @@
                                                  (add-player "p1")
                                                  (add-question-to-player "p1" 1))
                                              "p1"
-                                             1) [:players :p1 :questions :1]))
+                                             1
+                                             true) [:players :p1 :questions :1]))
                   true))
            (is (= (get-in (set-focus (-> (create-game "1234")
                                          (add-player "p1")
                                          (add-question-to-player "p1" 1)
                                          (add-question-to-player "p1" 2)
-                                         (set-focus "p1" 1))
+                                         (set-focus "p1" 1 true))
                                      "p1"
-                                     2) [:players :p1 :questions :2 :focus])
+                                     2
+                                     true) [:players :p1 :questions :2 :focus])
                   true)))}
-  [state playerId questionId]
+  [state playerId questionId bool]
   (update-in state [:players (keyword playerId) :questions]
              (fn [questions]
                (-> (into {} (for [[k v] questions]
                               [k (assoc v :focus false)]))
-                   (assoc-in [(keyword (str questionId)) :focus] true)))))
+                   (assoc-in [(keyword (str questionId)) :focus] bool)))))
 
 (defn set-active-question
   {:test (fn []
@@ -201,6 +203,7 @@
                   (assoc (:1 questions) :answers {}))))}
   [state, question]
   (assoc state :activeQuestion (assoc question :answers {})))
+
 
 (defn answer
   {:test (fn []
@@ -260,6 +263,28 @@
             true))
 
 
+(defn check-winner
+  {:test (fn []
+           (declare change-turn)
+           (is (= (:points (first (:results (as-> (create-game "1234") $
+                                                  (add-player $ "p1")
+                                                  (add-player $ "p2")
+                                                  (add-player $ "p3")
+                                                  (add-question-to-player $ "p1" "1")
+                                                  (set-active-question $ (get-in $ [:players :p1 :questions :1]))
+                                                  (start-game $)
+                                                  (answer $ "p2" "test answer")
+                                                  (correct-answer $ "p2" true)
+                                                  (change-turn $)
+                                                  (answer $ "p3" "test answer")
+                                                  (change-turn $)
+                                                  (check-winner $))))) 100)))}
+  [state]
+  (if (= (count (:answeredQuestions state))
+         (reduce + (map #(count (:questions %)) (get-players state))))
+    (assoc state :results (reverse (sort-by :points (get-players state))))
+    state))
+
 (defn change-turn
   {:test (fn []
            (is (let [state (as-> (create-game "123") $
@@ -284,20 +309,30 @@
                             (mod (+ (.indexOf (:playOrder state) (keyword (:turn state))) 1)
                                  (count (:playOrder state)))))
         (update $ :answeredQuestions conj (:activeQuestion $))
-        (assoc $ :activeQuestion nil)))
+        (set-focus $ (get-in $ [:activeQuestion :playerId]) (get-in $ [:activeQuestion :id]) false)
+        (assoc $ :activeQuestion nil)
+        (check-winner $)))
 
 (defn maybe-change-turn
   {:test (fn []
            (is (let [state (as-> (create-game "1234") $
                                  (add-player $ "p1")
                                  (add-player $ "p2")
+                                 (add-player $ "p3")
                                  (add-question-to-player $ "p1" "1")
                                  (set-active-question $ (get-in $ [:players :p1 :questions :1]))
                                  (start-game $)
-                                 (answer $ "p2" "test answer"))]
+                                 (answer $ "p2" "test answer")
+                                 (answer $ "p3" "test answer"))]
                  (not= (maybe-change-turn state) state))))}
   [state]
   (if (= (keys (get-in state [:activeQuestion :answers]))
          (remove nil? (filter #(not= % (keyword (get-in state [:activeQuestion :playerId]))) (keys (:players state)))))
     (change-turn state)
     state))
+
+(defn add-error
+  {:test (fn []
+           (is (not= (:error (add-error (create-game "123") "error message")) nil)))}
+  [state error]
+  (assoc state :error error))
